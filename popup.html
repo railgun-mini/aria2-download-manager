@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Aria2 下载</title>
+  <link rel="stylesheet" href="css/popup.css">
+</head>
+
+<body>
+  <header>
+    <div class="title">
+      <span class="status-dot" id="statusDot"></span>
+      <h6>Aria2 下载</h6>
+    </div>
+    <a href="#" class="options-link" id="openOptions">
+      <h6>⚙️ 设置</h6>
+    </a>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="input-row">
+        <input type="url" id="downloadUrl" placeholder="输入下载链接..." />
+        <button class="btn btn-primary" id="sendDownloadBtn">下载</button>
+      </div>
+      <div id="errorMsg" class="error-message"></div>
+      <div class="last-task" id="lastTask"></div>
+    </div>
+
+    <div class="card tasks-card">
+      <div class="tasks-header">
+        <span>📥 下载任务</span>
+        <button class="btn-icon" id="refreshTasksBtn" title="刷新">🔄</button>
+      </div>
+      <div id="taskList" class="task-list">
+        <div class="empty-tasks">暂无任务</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <button class="btn btn-outline" style="width:100%;" id="reconnectBtn">🔄 重新连接</button>
+  </footer>
+
+  <script src="js/popup.js"></script>
+</body>
+
+</html>

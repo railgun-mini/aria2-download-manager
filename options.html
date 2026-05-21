@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Aria2 下载插件设置</title>
+  <link rel="stylesheet" href="css/options.css">
+</head>
+
+<body>
+  <div id="statusMessage" class="status-message"></div>
+  <div class="btn-container">
+    <button id="saveBtn" class="btn btn-primary">💾 保存设置</button>
+    <button id="resetBtn" class="btn btn-reset">🔄 重置设置</button>
+  </div>
+  <div class="container">
+    <h1>⚙️ Aria2 下载插件设置</h1>
+
+    <!-- 连接设置 -->
+    <div class="card">
+      <h2>🔗 连接设置</h2>
+      <div class="form-group">
+        <label for="aria2Url">WebSocket 地址</label>
+        <input type="url" id="aria2Url" placeholder="ws://localhost:6800/jsonrpc" />
+      </div>
+      <div class="form-group">
+        <label for="aria2Secret">密钥（RPC Secret）</label>
+        <input type="text" id="aria2Secret" placeholder="可选，若未设置可留空" />
+      </div>
+    </div>
+
+    <!-- 下载行为 -->
+    <div class="card">
+      <h2>📥 下载行为</h2>
+      <div class="toggle-row">
+        <span class="toggle-label">自动发送下载</span>
+        <label class="toggle">
+          <input type="checkbox" id="autoSendDownloads" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 默认文件夹 -->
+    <div class="card">
+      <h2>📁 默认文件夹</h2>
+      <!-- 是否开启 -->
+      <div class="toggle-row">
+        <span class="toggle-label">启用默认文件夹</span>
+        <label class="toggle">
+          <input type="checkbox" id="enableDefaultDirectory" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label for="defaultDirectory">下载目录</label>
+        <input type="text" id="defaultDirectory" placeholder="C:\path\to\downloads" />
+      </div>
+    </div>
+
+    <!-- 文件分类 -->
+    <div class="card">
+      <h2>📂 文件自动分类</h2>
+      <div class="toggle-row">
+        <span class="toggle-label">启用文件分类</span>
+        <label class="toggle">
+          <input type="checkbox" id="enableFileClassification" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div id="mappingContainer">
+        <div class="form-group" style="margin-bottom: 0.5rem;">
+          <label>文件类型映射（文件夹名 → 文件类型）</label>
+        </div>
+        <div id="mappingList"></div>
+        <button id="addMappingBtn" class="btn btn-outline" style="margin-top: 0.5rem;">
+          ➕ 添加新规则
+        </button>
+      </div>
+    </div>
+  </div>
+  <script src="js/options.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,291 @@
+@import "main.css";
+
+body {
+    min-width: 600px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.title {
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.status-dot {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #9ca3af;
+    display: inline-block;
+}
+
+.status-dot.connected {
+    background: var(--green);
+}
+
+.status-dot.disconnected {
+    background: var(--red);
+}
+
+.card {
+    background: #f9fafb;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+input[type="url"] {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #4338ca;
+}
+
+.btn-outline {
+    background: white;
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.btn-outline:hover {
+    background: #f3f4f6;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #d1d5db;
+    border-radius: 22px;
+    transition: .3s;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: .3s;
+}
+
+.last-task {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.options-link {
+    font-size: 0.8rem;
+    color: var(--primary);
+    text-decoration: none;
+    margin-left: 8px;
+}
+
+.error-message {
+    color: var(--red);
+    font-size: 0.8rem;
+    margin-top: 4px;
+}
+
+/* ========== 新增任务列表样式 ========== */
+.tasks-card {
+    padding-bottom: 8px;
+}
+
+.tasks-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.btn-icon:hover {
+    background: #e5e7eb;
+}
+
+.task-list {
+    min-height: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.empty-tasks {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    padding: 20px 0;
+}
+
+.task-item {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.task-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.task-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #9ca3af;
+    display: inline-block;
+}
+
+.status-dot-active {
+    background-color: #3b82f6;
+}
+
+.status-dot-waiting {
+    background-color: #f59e0b;
+}
+
+.status-dot-paused {
+    background-color: #6b7280;
+}
+
+.status-dot-complete {
+    background-color: #10b981;
+}
+
+.status-dot-error {
+    background-color: #ef4444;
+}
+
+
+.task-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.task-meta {
+    display: flex;
+    gap: 10px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.task-status {
+    text-transform: capitalize;
+}
+
+.status-active {
+    color: #3b82f6;
+}
+
+.status-waiting {
+    color: #f59e0b;
+}
+
+.status-paused {
+    color: #6b7280;
+}
+
+.status-complete {
+    color: #10b981;
+}
+
+.status-error {
+    color: #ef4444;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary);
+    width: 0%;
+    transition: width 0.2s;
+}
+
+.task-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.task-actions .btn-icon {
+    padding: 4px;
+}

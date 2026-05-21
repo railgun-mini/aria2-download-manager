@@ -1,0 +1,75 @@
+html {
+    /* border-box: width计算border+padding+content */
+    /* content-box: width计算border+padding+content */
+    box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+    /* 继承父 */
+    box-sizing: inherit;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+}
+
+:root {
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --bg: #f9fafb;
+    --card-bg: #ffffff;
+    --text: #1f2937;
+    --text-secondary: #6b7280;
+    --border: #e5e7eb;
+    --danger: #ef4444;
+    --red: #ef4444;
+    --green: #10b981;
+    --danger-hover: #dc2626;
+    --success: #10b981;
+    --radius: 16px;
+}
+
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+        "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+        sans-serif;
+}
+
+/* 基于16px */
+h1,
+.fs-h1 {
+    font-size: clamp(3rem, 2.7273rem + 1.0909vi, 3.6rem);
+}
+
+h2,
+.fs-h2 {
+    font-size: clamp(2.25rem, 2.0455rem + 0.8182vi, 2.7rem);
+}
+
+h3,
+.fs-h3 {
+    font-size: clamp(1.875rem, 1.7045rem + 0.6818vi, 2.25rem);
+}
+
+h4,
+.fs-h4 {
+    font-size: clamp(1.5rem, 1.3636rem + 0.5455vi, 1.8rem);
+}
+
+h5,
+.fs-h5 {
+    font-size: clamp(1.25rem, 1.1364rem + 0.4545vi, 1.5rem);
+}
+
+h6,
+.fs-h6 {
+    font-size: clamp(1.125rem, 1.0227rem + 0.4091vi, 1.35rem);
+}
+
+p,
+.fs-p {
+    font-size: clamp(0.8333rem, 0.7576rem + 0.303vi, 1rem);
+}
