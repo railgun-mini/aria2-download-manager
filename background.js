@@ -81,6 +81,10 @@ class Aria2RPC {
     return this.send('aria2.getGlobalOption');
   }
 
+  changeGlobalOption(options) {
+    return this.send('aria2.changeGlobalOption', options);
+  }
+
   addUri(uris, options = {}) {
     return this.send('aria2.addUri', [uris, options]);
   }
@@ -134,6 +138,9 @@ const DEFAULT_SETTINGS = {
   enableDefaultDirectory: false,
   defaultDirectory: "",
   enableFileClassification: true,
+  enableProxy: true,                        // 是否启用代理
+  proxyUrl: "http://127.0.0.1:10808",       // v2rayN 默认 HTTP 代理端口
+  minFileSize: 20,
   fileClassification: {
     "pdf": "docment",
     "doc": "docment",
@@ -294,57 +301,90 @@ function isAbsolutePath(p) {
 }
 
 async function getFileNameFromUrl(url) {
-  let filename = '';
-  try {
-    const response = await fetch(url, {
-      method: 'HEAD',
-      redirect: 'follow',
-    });
-    // 1. 从 Content-Disposition 头中提取文件名（优先级最高）
-    const disposition = response.headers.get('Content-Disposition');
-    if (disposition) {
-      // 匹配 filename*=UTF-8''encoded-name
-      const starMatch = disposition.match(/filename\*=(?:UTF-8|ISO-8859-1)''([^;\s]+)/i);
-      if (starMatch) {
-        filename = decodeURIComponent(starMatch[1]);
-      } else {
-        // 匹配 filename="name" 或 filename=name
-        const normalMatch = disposition.match(/filename\s*=\s*"([^"]*)"/i);
-        if (normalMatch) {
-          filename = normalMatch[1];
-        } else {
-          const plainMatch = disposition.match(/filename\s*=\s*([^;\s]+)/i);
-          if (plainMatch) {
-            filename = plainMatch[1].replace(/["']/g, '');
-          }
-        }
-      }
+  const timeout = 5000;
+  const sanitize = true;
+
+  function parseContentDisposition(header) {
+    if (!header) return '';
+    const extMatch = header.match(
+      /filename\*\s*=\s*([A-Za-z0-9_-]+)'[^']*'([^;\s]+)/i
+    );
+    if (extMatch) {
+      try { return decodeURIComponent(extMatch[2]); }
+      catch { return extMatch[2]; }
     }
-    // 2. 如果头中没获取到，尝试从最终有效 URL 的路径中提取
-    if (!filename) {
-      const finalUrl = response.url || url;
-      const pathname = new URL(finalUrl).pathname;
-      const segments = pathname.split('/').filter(Boolean);
-      const lastSegment = segments.pop() || '';
-      // 有扩展名（常见文件）或看起来像文件名时采用，避免把目录当文件名
-      if (lastSegment && /\.[a-z0-9]{1,10}$/i.test(lastSegment)) {
-        filename = lastSegment;
-      }
-    }
-  } catch (err) {
-    // 网络请求失败时，从原始 URL 做最基础解析
+    const quotedMatch = header.match(/filename\s*=\s*"((?:[^"\\]|\\.)*)"/i);
+    if (quotedMatch) return quotedMatch[1].replace(/\\(.)/g, '$1');
+    const bareMatch = header.match(/filename\s*=\s*([^;\s"]+)/i);
+    if (bareMatch) return decodeURIComponent(bareMatch[1].replace(/['"]/g, ''));
+    return '';
+  }
+
+  function parseUrlPathname(rawUrl) {
     try {
-      const pathname = new URL(url).pathname;
-      const segments = pathname.split('/').filter(Boolean);
-      const last = segments.pop() || '';
-      if (last && /\.[a-z0-9]{1,10}$/i.test(last)) {
-        filename = last;
+      const { pathname, searchParams } = new URL(rawUrl);
+      const rcd = searchParams.get('response-content-disposition');
+      if (rcd) {
+        const fromQuery = parseContentDisposition(decodeURIComponent(rcd));
+        if (fromQuery) return fromQuery;
       }
-    } catch {
-      // 放弃
+      const last = pathname.split('/').filter(Boolean).pop() || '';
+      if (/\.[a-z0-9]{1,10}$/i.test(last)) {
+        return decodeURIComponent(last);
+      }
+    } catch { }
+    return '';
+  }
+
+  function sanitizeFilename(name) {
+    if (!name) return name;
+    return name
+      .replace(/[\x00-\x1f\x7f]/g, '')
+      .replace(/[/\\:*?"<>|]/g, '_')
+      .replace(/\.{2,}/g, '.')
+      .replace(/^[\s.]+|[\s.]+$/g, '')
+      .slice(0, 255);
+  }
+
+  // ✅ 第一步：优先直接从 URL 解析，无需网络请求
+  const quickResult = parseUrlPathname(url);
+  if (quickResult) {
+    return sanitize ? sanitizeFilename(quickResult) : quickResult;
+  }
+
+  // ✅ 第二步：URL 里没有，再尝试 fetch（插件需配置权限）
+  async function fetchHeaders(method) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      return await fetch(url, {
+        method,
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
     }
   }
-  return filename;
+
+  let filename = '';
+  try {
+    let response = await fetchHeaders('HEAD');
+    if (response.status === 405 || response.status === 501) {
+      response = await fetchHeaders('GET');
+      response.body?.cancel?.();
+    }
+    if (response.ok) {
+      filename =
+        parseContentDisposition(response.headers.get('Content-Disposition')) ||
+        parseUrlPathname(response.url || url);
+    }
+  } catch (e) {
+    console.warn('[getFileNameFromUrl] fetch failed:', e.message);
+    filename = parseUrlPathname(url);
+  }
+
+  return sanitize ? sanitizeFilename(filename) : filename;
 }
 
 async function getFileDir(filename) {
@@ -370,7 +410,36 @@ async function getFileDir(filename) {
   return dir;
 }
 
+async function isProxyAlive(proxyUrl, timeout = 1500) {
+  const { hostname, port } = new URL(proxyUrl);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    await fetch(`http://${hostname}:${port}`, {
+      signal: controller.signal,
+      mode: 'no-cors', // 避免 CORS 报错，不需要读响应内容
+    });
+    return true; // 有响应（含网络错误响应）→ 端口活
+  } catch (e) {
+    if (e.name === 'AbortError') return false; // 超时 → 端口没开
+    return true; // 其他网络错误（协议不匹配等）→ 端口活
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function downloadWithUrl(url, options = {}) {
+  if (settings.enableProxy) {
+    // 验证代理是否有效
+    const alive = await isProxyAlive(settings.proxyUrl);
+    if (alive) {
+      options = {
+        ...options,
+        'all-proxy': settings.proxyUrl
+      };
+    }
+  }
   const client = await getRPCClient();
   const result = await client.addUri([url], options);
   return result;
@@ -403,6 +472,29 @@ async function buildHeadersFromDownload(downloadItem) {
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
   if (!settings.autoSendDownloads) return;
 
+
+  // 拦截的最小文件
+  if (settings.minFileSize) {
+    const THRESHOLD = settings.minFileSize * 1024 * 1024; // MB
+    // 1. 优先用 downloadItem.fileSize（服务器有返回 Content-Length 时有效）
+    let fileSize = downloadItem.fileSize || 0;
+
+    // 2. fileSize 为 0 时，发 HEAD 请求补充获取
+    if (fileSize === 0) {
+      try {
+        const res = await fetch(downloadItem.url, { method: 'HEAD', redirect: 'follow' });
+        const contentLength = res.headers.get('Content-Length');
+        if (contentLength) fileSize = parseInt(contentLength, 10);
+      } catch {
+        // HEAD 失败则 fileSize 保持 0，视为未知大小，继续走 aria2
+      }
+    }
+
+    // 3. 已知大小且低于阈值 → 放行，不拦截
+    if (fileSize > 0 && fileSize < THRESHOLD) return;
+  }
+
+
   // 先取消浏览器原生下载
   try {
     await chrome.downloads.cancel(downloadItem.id);
@@ -413,7 +505,6 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
 
   const url = downloadItem.url;
   const filename = await getFileNameFromUrl(url);
-  console.log("filename", filename)
   try {
     const options = {};
     // 获取目录和 headers（含 Cookie）

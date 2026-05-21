@@ -5,6 +5,9 @@ const DEFAULT_SETTINGS = {
   enableDefaultDirectory: false,
   defaultDirectory: "",
   enableFileClassification: true,
+  enableProxy: true,                        // 是否启用代理
+  proxyUrl: "http://127.0.0.1:10808",       // v2rayN 默认 HTTP 代理端口
+  minFileSize: 20,
   fileClassification: {
     "pdf": "docment",
     "doc": "docment",

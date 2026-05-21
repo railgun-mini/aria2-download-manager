@@ -14,7 +14,6 @@
     "downloads",
     "storage",
     "cookies",
-    "notifications",
     "contextMenus"
   ],
   "host_permissions": [
