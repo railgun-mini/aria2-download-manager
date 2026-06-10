@@ -12,7 +12,7 @@ class Aria2RPC {
   }
 
   _connect() {
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
 
     this.ws = new WebSocket(this.url);
 
@@ -66,7 +66,7 @@ class Aria2RPC {
     return new Promise((resolve, reject) => {
       this.pending.set(request.id, { resolve, reject });
 
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.send(msg);
       } else {
         this.queue.push(msg);
@@ -121,14 +121,36 @@ class Aria2RPC {
     return this.send('aria2.removeDownloadResult', [gid]);
   }
 
-  purgeDownloadResult(gid) {
+  purgeDownloadResult() {
     return this.send('aria2.purgeDownloadResult');
+  }
+
+  reconnect(url, secret) {
+    this.url = url;
+    this.secret = secret;
+    this._connect();
   }
 
   close() {
     this.autoReconnect = false;
     this.ws && this.ws.close();
   }
+}
+
+let rpcClient = null;
+
+async function getRPCClient() {
+  if (!rpcClient) {
+    rpcClient = new Aria2RPC(settings.aria2Url, settings.aria2Secret);
+    return rpcClient;
+  }
+  const state = rpcClient.ws?.readyState;
+  if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
+    return rpcClient;
+  }
+  // CLOSING 或 CLOSED 才重连
+  rpcClient.reconnect(settings.aria2Url, settings.aria2Secret);
+  return rpcClient;
 }
 
 const DEFAULT_SETTINGS = {
@@ -175,8 +197,6 @@ const DEFAULT_SETTINGS = {
     "7z": "compressed",
     "tar": "compressed",
     "gz": "compressed",
-    "tar.gz": "compressed",
-    "tar.bz2": "compressed",
     "exe": "program",
     "msi": "program",
     "dmg": "program",
@@ -189,22 +209,6 @@ let settings = null;
 (async () => {
   settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
 })();
-
-let rpcClient = null;
-
-async function getRPCClient() {
-  if (rpcClient && rpcClient.ws && rpcClient.ws.readyState === WebSocket.OPEN) {
-    return rpcClient;
-  }
-  if (rpcClient) {
-    rpcClient.url = settings.aria2Url;
-    rpcClient.secret = settings.aria2Secret;
-    rpcClient._connect();
-    return rpcClient;
-  }
-  rpcClient = new Aria2RPC(settings.aria2Url, settings.aria2Secret);
-  return rpcClient;
-}
 
 // 获取所有任务列表
 async function getAllTasks(client) {
@@ -235,11 +239,12 @@ function convertAria2Task(aria2Task) {
   const gid = aria2Task.gid;
   let name = '';
   // 1. BT 任务：优先名称
-  if (aria2Task.bittorrent && aria2Task.bittorrent.info.name) {
+  if (aria2Task.bittorrent?.info?.name) {
     name = aria2Task.bittorrent.info.name;
   }
   // 2. 普通多文件任务（非 BT，但可能有 files 数组，例如 Metalink）
-  else if (aria2Task.files && aria2Task.files.length > 0) {
+  // 当aria2Task.files?是undefined的时候进行比较的时候是NaN
+  else if (aria2Task.files?.length > 0) {
     // 对于普通下载，files 通常只有一个文件，取文件名
     // 如果存在多文件且非 BT，显示第一个文件名并加后缀提示
     const firstFilePath = aria2Task.files[0].path;
@@ -274,12 +279,87 @@ function convertAria2Task(aria2Task) {
     progress: progress,
     status: aria2Task.status,
     speed: speed,
-    isBt: isBt,   // 新增字段，可用于前端显示特殊标记
+    isBt: isBt,
     totalLength: totalLength,
     completedLength: completedLength,
     remainingSeconds: remainingSeconds,
     files: aria2Task.files // 新增，注意是字符串，需在前端处理
   };
+}
+
+function extractFilename(url) {
+  // 尝试使用 URL API 解析（处理绝对路径更准确）
+  try {
+    const urlObj = new URL(url);
+    let pathname = urlObj.pathname;
+
+    // 如果路径以斜杠结尾，表示目录，没有文件名
+    if (pathname.endsWith('/')) {
+      return '';
+    }
+
+    // 提取最后一个 '/' 之后的部分
+    const filename = pathname.substring(pathname.lastIndexOf('/') + 1);
+
+    // 解码 URL 编码的字符（如 %20 转为空格）
+    try {
+      return decodeURIComponent(filename);
+    } catch (e) {
+      return filename; // 解码失败则返回原始字符串
+    }
+  } catch (e) {
+    return '';
+  }
+}
+
+function parseFilenameFromContentDisposition(cd) {
+  if (!cd) return null;
+
+  let filename = null;
+
+  // 优先匹配 filename*=UTF-8''xxxx（支持中文字符）
+  const starMatch = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (starMatch) {
+    try {
+      filename = decodeURIComponent(starMatch[1]);
+    } catch {
+      filename = starMatch[1];
+    }
+  } else {
+    // 回退匹配 filename="xxx" 或 filename=xxx
+    const plainMatch = cd.match(/filename[^*]=["]?([^";]+)["]?/i);
+    if (plainMatch) {
+      let raw = plainMatch[1];
+      // 某些服务器（如微软）在普通 filename 中也使用百分号编码，尝试解码
+      if (raw.includes('%')) {
+        try {
+          raw = decodeURIComponent(raw);
+        } catch { }
+      }
+      filename = raw;
+    }
+  }
+
+  return filename;
+}
+
+async function getFilenameFromUrl(url) {
+  // 1. 尝试从 Content-Disposition 头部获取
+  try {
+    // 使用 HEAD 请求（不下载文件体，效率高）
+    const response = await fetch(url, { method: 'HEAD' });
+    if (response.ok) {
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const filenameFromHeader = parseFilenameFromContentDisposition(contentDisposition);
+      if (filenameFromHeader) return filenameFromHeader;
+    }
+  } catch (err) {
+    // 网络错误、CORS 或 HEAD 不支持时，静默降级到 URL 解析
+    console.warn('请求 Content-Disposition 失败，将从 URL 推断后缀:', err.message);
+  }
+
+  // 2. 回退：从 URL 路径或查询参数中提取扩展名
+  return extractFilename(url);
 }
 
 function joinPaths(...segments) {
@@ -298,93 +378,6 @@ function isAbsolutePath(p) {
   if (/^\\\\/.test(p)) return true;
   if (p.startsWith('/')) return true;
   return false;
-}
-
-async function getFileNameFromUrl(url) {
-  const timeout = 5000;
-  const sanitize = true;
-
-  function parseContentDisposition(header) {
-    if (!header) return '';
-    const extMatch = header.match(
-      /filename\*\s*=\s*([A-Za-z0-9_-]+)'[^']*'([^;\s]+)/i
-    );
-    if (extMatch) {
-      try { return decodeURIComponent(extMatch[2]); }
-      catch { return extMatch[2]; }
-    }
-    const quotedMatch = header.match(/filename\s*=\s*"((?:[^"\\]|\\.)*)"/i);
-    if (quotedMatch) return quotedMatch[1].replace(/\\(.)/g, '$1');
-    const bareMatch = header.match(/filename\s*=\s*([^;\s"]+)/i);
-    if (bareMatch) return decodeURIComponent(bareMatch[1].replace(/['"]/g, ''));
-    return '';
-  }
-
-  function parseUrlPathname(rawUrl) {
-    try {
-      const { pathname, searchParams } = new URL(rawUrl);
-      const rcd = searchParams.get('response-content-disposition');
-      if (rcd) {
-        const fromQuery = parseContentDisposition(decodeURIComponent(rcd));
-        if (fromQuery) return fromQuery;
-      }
-      const last = pathname.split('/').filter(Boolean).pop() || '';
-      if (/\.[a-z0-9]{1,10}$/i.test(last)) {
-        return decodeURIComponent(last);
-      }
-    } catch { }
-    return '';
-  }
-
-  function sanitizeFilename(name) {
-    if (!name) return name;
-    return name
-      .replace(/[\x00-\x1f\x7f]/g, '')
-      .replace(/[/\\:*?"<>|]/g, '_')
-      .replace(/\.{2,}/g, '.')
-      .replace(/^[\s.]+|[\s.]+$/g, '')
-      .slice(0, 255);
-  }
-
-  // ✅ 第一步：优先直接从 URL 解析，无需网络请求
-  const quickResult = parseUrlPathname(url);
-  if (quickResult) {
-    return sanitize ? sanitizeFilename(quickResult) : quickResult;
-  }
-
-  // ✅ 第二步：URL 里没有，再尝试 fetch（插件需配置权限）
-  async function fetchHeaders(method) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    try {
-      return await fetch(url, {
-        method,
-        redirect: 'follow',
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  let filename = '';
-  try {
-    let response = await fetchHeaders('HEAD');
-    if (response.status === 405 || response.status === 501) {
-      response = await fetchHeaders('GET');
-      response.body?.cancel?.();
-    }
-    if (response.ok) {
-      filename =
-        parseContentDisposition(response.headers.get('Content-Disposition')) ||
-        parseUrlPathname(response.url || url);
-    }
-  } catch (e) {
-    console.warn('[getFileNameFromUrl] fetch failed:', e.message);
-    filename = parseUrlPathname(url);
-  }
-
-  return sanitize ? sanitizeFilename(filename) : filename;
 }
 
 async function getFileDir(filename) {
@@ -410,6 +403,7 @@ async function getFileDir(filename) {
   return dir;
 }
 
+// TODO:需要真实检测代理是否可用
 async function isProxyAlive(proxyUrl, timeout = 1500) {
   const { hostname, port } = new URL(proxyUrl);
   const controller = new AbortController();
@@ -471,10 +465,8 @@ async function buildHeadersFromDownload(downloadItem) {
 // ========== 拦截浏览器下载（完整版） ==========
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
   if (!settings.autoSendDownloads) return;
-
-
   // 拦截的最小文件
-  if (settings.minFileSize) {
+  if (settings.minFileSize && settings.minFileSize > 0) {
     const THRESHOLD = settings.minFileSize * 1024 * 1024; // MB
     // 1. 优先用 downloadItem.fileSize（服务器有返回 Content-Length 时有效）
     let fileSize = downloadItem.fileSize || 0;
@@ -482,19 +474,16 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     // 2. fileSize 为 0 时，发 HEAD 请求补充获取
     if (fileSize === 0) {
       try {
-        const res = await fetch(downloadItem.url, { method: 'HEAD', redirect: 'follow' });
+        const res = await fetch(downloadItem.url, { method: 'HEAD' });
         const contentLength = res.headers.get('Content-Length');
         if (contentLength) fileSize = parseInt(contentLength, 10);
       } catch {
         // HEAD 失败则 fileSize 保持 0，视为未知大小，继续走 aria2
       }
     }
-
     // 3. 已知大小且低于阈值 → 放行，不拦截
     if (fileSize > 0 && fileSize < THRESHOLD) return;
   }
-
-
   // 先取消浏览器原生下载
   try {
     await chrome.downloads.cancel(downloadItem.id);
@@ -502,9 +491,8 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     console.warn('取消下载失败:', err);
     return;
   }
-
   const url = downloadItem.url;
-  const filename = await getFileNameFromUrl(url);
+  const filename = await getFilenameFromUrl(url);
   try {
     const options = {};
     // 获取目录和 headers（含 Cookie）
@@ -547,7 +535,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     headers.push(`Cookie: ${cookieString}`);
   }
   const options = {};
-  const dir = await getFileDir(await getFileNameFromUrl(downloadUrl))
+  const dir = await getFileDir(await getFilenameFromUrl(downloadUrl))
   if (dir) options.dir = dir;
   if (headers.length) options.header = headers;
   downloadWithUrl(downloadUrl, options);
@@ -569,7 +557,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         case 'addDownload': {
-          const dir = await getFileDir(await getFileNameFromUrl(request.url));
+          const dir = await getFileDir(await getFilenameFromUrl(request.url));
           const options = {};
           if (dir) options.dir = dir;
           downloadWithUrl(request.url, options);

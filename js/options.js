@@ -42,8 +42,6 @@ const DEFAULT_SETTINGS = {
     "7z": "compressed",
     "tar": "compressed",
     "gz": "compressed",
-    "tar.gz": "compressed",
-    "tar.bz2": "compressed",
     "exe": "program",
     "msi": "program",
     "dmg": "program",
