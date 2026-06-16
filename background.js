@@ -41,6 +41,8 @@ class Aria2RPC {
       }
       if (this.autoReconnect) {
         setTimeout(() => this._connect(), 2000);
+      } else {
+        this.queue = [];   // 不再重连时清空队列
       }
     };
 
@@ -133,7 +135,10 @@ class Aria2RPC {
 
   close() {
     this.autoReconnect = false;
-    this.ws && this.ws.close();
+    this.queue = [];           // 清空队列，释放无用消息
+    if (this.ws) {
+      this.ws.close();
+    }
   }
 }
 
