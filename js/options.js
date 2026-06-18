@@ -56,6 +56,8 @@ chrome.runtime.getPlatformInfo(info => { cachedOS = info.os; });
 function populateForm(settings) {
   document.getElementById('aria2Url').value = settings.aria2Url || '';
   document.getElementById('aria2Secret').value = settings.aria2Secret || '';
+  document.getElementById('enableProxy').checked = !!settings.enableProxy;
+  document.getElementById('proxyUrl').value = settings.proxyUrl || '';
   document.getElementById('enableDefaultDirectory').checked = !!settings.enableDefaultDirectory;
   document.getElementById('defaultDirectory').value = settings.defaultDirectory || '';
   document.getElementById('autoSendDownloads').checked = !!settings.autoSendDownloads;
@@ -157,6 +159,17 @@ function validateSettings(settings) {
     return false;
   }
 
+  if (settings.enableProxy) {
+    if (!settings.proxyUrl) {
+      showStatus('代理地址不能为空', 'error');
+      return false;
+    }
+    if (!URL.canParse(settings.proxyUrl)) {
+      showStatus('代理地址格式不正确', 'error');
+      return false;
+    }
+  }
+
   if (settings.enableDefaultDirectory && !settings.defaultDirectory) {
     showStatus('默认下载目录不能为空', 'error');
     return false;
@@ -194,6 +207,8 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   const settings = {
     aria2Url: document.getElementById('aria2Url').value.trim(),
     aria2Secret: document.getElementById('aria2Secret').value.trim(),
+    enableProxy: document.getElementById('enableProxy').checked,
+    proxyUrl: document.getElementById('proxyUrl').value.trim(),
     autoSendDownloads: document.getElementById('autoSendDownloads').checked,
     enableDefaultDirectory: document.getElementById('enableDefaultDirectory').checked,
     defaultDirectory: document.getElementById('defaultDirectory').value.trim(),

@@ -27,7 +27,8 @@ class Aria2RPC {
       let data;
       try { data = JSON.parse(event.data); } catch (e) { return; }
       if (data.id && this.pending.has(data.id)) {
-        const { resolve, reject } = this.pending.get(data.id);
+        const { resolve, reject, timer } = this.pending.get(data.id);
+        clearTimeout(timer);
         this.pending.delete(data.id);
         if (data.error) reject(data.error);
         else resolve(data.result);
@@ -35,7 +36,8 @@ class Aria2RPC {
     };
 
     this.ws.onclose = () => {
-      for (const [id, { reject }] of this.pending) {
+      for (const [id, { reject, timer }] of this.pending) {
+        clearTimeout(timer);
         reject(new Error('WebSocket closed'));
         this.pending.delete(id);
       }
@@ -66,7 +68,18 @@ class Aria2RPC {
     const msg = JSON.stringify(request);
 
     return new Promise((resolve, reject) => {
-      this.pending.set(request.id, { resolve, reject });
+      // 设置超时定时器, 防止pending一直没有结果滞留内存
+      const timeout = 30000;
+      const timer = setTimeout(() => {
+        // 检查该请求是否还在 pending 中（可能已被提前处理）
+        if (this.pending.has(request.id)) {
+          const { reject } = this.pending.get(request.id);
+          this.pending.delete(request.id);
+          reject(new Error(`Request ${method} (id: ${request.id}) timed out after ${timeout}ms`));
+        }
+      }, timeout);
+
+      this.pending.set(request.id, { resolve, reject, timer });
 
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.send(msg);
@@ -85,6 +98,10 @@ class Aria2RPC {
 
   changeGlobalOption(options) {
     return this.send('aria2.changeGlobalOption', options);
+  }
+
+  getActive() {
+    return this.send('aria2.tellActive');
   }
 
   addUri(uris, options = {}) {
@@ -358,10 +375,7 @@ async function getFilenameFromUrl(url) {
       const filenameFromHeader = parseFilenameFromContentDisposition(contentDisposition);
       if (filenameFromHeader) return filenameFromHeader;
     }
-  } catch (err) {
-    // 网络错误、CORS 或 HEAD 不支持时，静默降级到 URL 解析
-    console.warn('请求 Content-Disposition 失败，将从 URL 推断后缀:', err.message);
-  }
+  } catch (err) { }
 
   // 2. 回退：从 URL 路径或查询参数中提取扩展名
   return extractFilename(url);
@@ -397,7 +411,7 @@ async function getFileDir(filename) {
       const globalOption = await client.getGlobalOption();
       dir = globalOption?.dir ? joinPaths(globalOption.dir, dir) : dir;
     } catch (e) {
-      console.warn('获取aria2默认下载目录失败:', e);
+      console.warn('Failed to get aria2 download directory:', e);
     }
   }
   if (!settings.enableFileClassification) return dir;
@@ -450,7 +464,7 @@ async function getCookieStringForUrl(url) {
     // 拼接成 "name1=value1; name2=value2" 格式
     return cookies.map(c => `${c.name}=${c.value}`).join('; ');
   } catch (err) {
-    console.warn('获取 Cookie 失败:', err);
+    console.warn('Failed to get cookie:', err);
     return '';
   }
 }
@@ -493,7 +507,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   try {
     await chrome.downloads.cancel(downloadItem.id);
   } catch (err) {
-    console.warn('取消下载失败:', err);
+    console.warn('Failed to cancel browser download:', err);
     return;
   }
   const url = downloadItem.url;
@@ -509,7 +523,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     options.header = headers;
     downloadWithUrl(url, options);
   } catch (err) {
-    console.error('转发到 Aria2 失败:', err);
+    console.error('Failed to forward aria2:', err);
   }
 });
 
@@ -528,7 +542,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // 1. 提取下载 URL
   let downloadUrl = info.linkUrl;
   if (!downloadUrl) {
-    console.warn('无法获取下载链接', info);
+    console.warn('failed to get url', info);
     return;
   }
   const headers = [];
@@ -634,28 +648,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         default:
-          throw new Error('未知操作');
+          throw new Error('unknown action');
       }
     } catch (err) {
-      return Promise.reject(err.message || '操作失败');
+      return Promise.reject(err.message || 'failure');
     }
   })().then(sendResponse).catch(err => sendResponse({ error: err.message || err }));
   return true;
 });
 
-async function notifiyIcon() {
-  const client = await getRPCClient();
-  const [active] = await Promise.all([
-    client.send('aria2.tellActive').catch(() => []),
-  ]);
-  // 设置图标通知
-  if (active.length !== 0) {
-    chrome.action.setBadgeText({ text: `${active.length}` });
+let lastBadgeCount = -1;
+
+async function notifyIcon() {
+  try {
+    const client = await getRPCClient();
+    const active = await client.getActive();
+    const currentCount = active.length;
+
+    if (lastBadgeCount !== currentCount) {
+      lastBadgeCount = currentCount;
+
+      if (currentCount > 0) {
+        chrome.action.setBadgeText({ text: String(currentCount) });
+        chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
+        chrome.action.setBadgeTextColor({ color: '#FFFFFF' });
+      } else {
+        chrome.action.setBadgeText({ text: '' });
+      }
+    }
+  } catch (error) {
+    // 🔥 关键修复：重置标记，防止恢复后无法更新
+    lastBadgeCount = -1;
+
+    // 只在状态确实变了时才设置 'E'，避免无谓的 IPC 调用（可选优化）
+    chrome.action.setBadgeText({ text: 'E' });
     chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
     chrome.action.setBadgeTextColor({ color: '#FFFFFF' });
-  } else {
-    chrome.action.setBadgeText({ text: '' })
+  } finally {
+    setTimeout(notifyIcon, 1000);
   }
 }
 
-setInterval(notifiyIcon, 1000);
+notifyIcon();
