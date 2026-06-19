@@ -483,7 +483,7 @@ async function buildHeadersFromDownload(downloadItem) {
 
 // ========== 拦截浏览器下载（完整版） ==========
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
-  if (!settings.autoSendDownloads) return;
+  if (!settings?.autoSendDownloads) return;
   // 拦截的最小文件
   if (settings.minFileSize && settings.minFileSize > 0) {
     const THRESHOLD = settings.minFileSize * 1024 * 1024; // MB
